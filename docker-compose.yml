@@ -1,0 +1,96 @@
+version: '3.8'
+
+services:
+  # 🔱 King Kashmiri - Database Engine
+  postgres:
+    image: postgres:15-alpine
+    container_name: king_kashmiri_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: crash_db
+      POSTGRES_USER: crash_user
+      # Update: Password set to hayatiusman@143
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-hayatiusman@143}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crash_user -d crash_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - kashmiri_network
+
+  # 🔱 King Kashmiri - Token Monitoring Service
+  token-monitor:
+    build:
+      context: .
+      dockerfile: Dockerfile.token-monitor
+    container_name: king_kashmiri_token_monitor
+    restart: unless-stopped
+    environment:
+      CHECK_INTERVAL: ${CHECK_INTERVAL:-600}
+    volumes:
+      - ./config:/app/config:ro
+    networks:
+      - kashmiri_network
+    depends_on:
+      - postgres
+
+  # 🔱 King Kashmiri - Real-time Data Scraper
+  scraper:
+    build:
+      context: .
+      dockerfile: Dockerfile.scraper
+    container_name: king_kashmiri_scraper
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: crash_db
+      DATABASE_USER: crash_user
+      DATABASE_PASSWORD: ${DB_PASSWORD:-hayatiusman@143}
+      XBET_ACCESS_TOKEN: "${XBET_ACCESS_TOKEN:-}"
+    volumes:
+      - ./config:/app/config:rw
+      - ./logs:/app/logs
+    networks:
+      - kashmiri_network
+
+  # 🔱 King Kashmiri - Live Prediction Dashboard
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    container_name: king_kashmiri_dashboard
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8501:8501"
+    environment:
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: crash_db
+      DATABASE_USER: crash_user
+      DATABASE_PASSWORD: ${DB_PASSWORD:-hayatiusman@143}
+    volumes:
+      - ./config:/app/config:rw
+    networks:
+      - kashmiri_network
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  kashmiri_network:
+    driver: bridge
